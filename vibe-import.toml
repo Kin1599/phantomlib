@@ -1,0 +1,63 @@
+# Vibe-Import Configuration
+# This file configures the vibe-import tool behavior
+
+[llm]
+# LLM provider: "openrouter", "openai", or "anthropic"
+# OpenRouter has free models and is the default
+provider = "openrouter"
+
+# Model name (optional, uses provider default if not set)
+# For OpenRouter, see available models at: https://openrouter.ai/models
+# Free models:
+#   - qwen/qwen3-coder:free (default, code-focused)
+#   - meta-llama/llama-3.2-3b-instruct:free (small, fast)
+#   - google/gemma-2-9b-it:free (good balance)
+#   - mistralai/mistral-7b-instruct:free (popular)
+# Paid models (better quality):
+#   - meta-llama/llama-3.1-70b-instruct
+#   - anthropic/claude-3.5-sonnet
+#   - openai/gpt-4o
+model = "qwen/qwen3-coder:free"
+
+# Generation temperature (0-1, lower = more deterministic)
+temperature = 0.2
+
+# Maximum tokens in response
+max_tokens = 8192
+
+# Custom API endpoint (optional, for self-hosted models)
+# base_url = "https://api.example.com/v1"
+
+[output]
+# Output directory for generated packages
+directory = "./generated"
+
+# Include documentation (README.md)
+include_docs = true
+
+# Include test files
+include_tests = false
+
+# Docstring style: "google", "numpy", or "sphinx"
+docstring_style = "google"
+
+# Overwrite existing files without asking
+overwrite = false
+
+[analysis]
+# Recursively analyze directories
+recursive = true
+
+# Patterns to exclude from analysis
+exclude_patterns = [
+    "**/venv/**",
+    "**/.venv/**",
+    "**/node_modules/**",
+    "**/__pycache__/**",
+    "**/.*/**",
+    "**/build/**",
+    "**/dist/**",
+]
+
+# Include standard library imports in analysis
+include_stdlib = false
