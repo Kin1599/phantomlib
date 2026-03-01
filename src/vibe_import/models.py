@@ -207,6 +207,14 @@ class GeneratedPackage:
 
 
 @dataclass
+class PyPIPackage:
+    """Information about a package available on PyPI."""
+    name: str
+    install_command: str
+    import_info: ImportInfo
+
+
+@dataclass
 class AnalysisResult:
     """Result of analyzing source code."""
     file_path: str
@@ -214,6 +222,7 @@ class AnalysisResult:
     missing_imports: list[ImportInfo] = field(default_factory=list)
     module_usages: list[ModuleUsage] = field(default_factory=list)
     errors: list[str] = field(default_factory=list)
+    pypi_packages: list[PyPIPackage] = field(default_factory=list)
 
 
 @dataclass

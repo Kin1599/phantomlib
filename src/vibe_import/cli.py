@@ -20,7 +20,7 @@ from vibe_import.analyzer import CodeAnalyzer
 from vibe_import.extractor import UsageExtractor
 from vibe_import.generator import PackageGenerator
 from vibe_import.docs_generator import DocumentationGenerator
-from vibe_import.models import GenerationConfig, AnalysisResult
+from vibe_import.models import GenerationConfig, AnalysisResult, PyPIPackage
 
 
 console = Console()
@@ -67,14 +67,20 @@ def main():
     default=False,
     help="Show detailed usage information"
 )
-def analyze(path: str, recursive: bool, show_usage: bool):
+@click.option(
+    "--ignore-pypi",
+    is_flag=True,
+    default=False,
+    help="Ignore PyPI and treat all non-stdlib packages as missing"
+)
+def analyze(path: str, recursive: bool, show_usage: bool, ignore_pypi: bool):
     """
     Analyze Python code for missing imports.
     
     PATH can be a Python file or directory.
     """
     path_obj = Path(path)
-    analyzer = CodeAnalyzer()
+    analyzer = CodeAnalyzer(check_pypi=not ignore_pypi)
     
     with Progress(
         SpinnerColumn(),
@@ -95,12 +101,34 @@ def analyze(path: str, recursive: bool, show_usage: bool):
 def _display_analysis_results(results: list[AnalysisResult], show_usage: bool) -> None:
     """Display analysis results in a formatted way."""
     total_missing = 0
+    total_pypi = 0
     
     for result in results:
         if result.errors:
             for error in result.errors:
                 print_error(f"{result.file_path}: {error}")
             continue
+        
+        # Show PyPI packages first
+        if result.pypi_packages:
+            total_pypi += len(result.pypi_packages)
+            console.print(f"\n[bold]{result.file_path}[/bold]")
+            console.print("[yellow]Packages available on PyPI (not installed):[/yellow]")
+            
+            pypi_table = Table(show_header=True, header_style="bold yellow")
+            pypi_table.add_column("Package")
+            pypi_table.add_column("Install Command")
+            pypi_table.add_column("Import")
+            
+            for pkg in result.pypi_packages:
+                pypi_table.add_row(
+                    f"[bold]{pkg.name}[/bold]",
+                    f"[cyan]{pkg.install_command}[/cyan]",
+                    str(pkg.import_info),
+                )
+            
+            console.print(pypi_table)
+            console.print("[dim]Tip: Run the install command above to install these packages.[/dim]\n")
         
         if not result.missing_imports:
             continue
@@ -148,10 +176,14 @@ def _display_analysis_results(results: list[AnalysisResult], show_usage: bool) -
                 console.print(tree)
     
     # Summary
-    if total_missing == 0:
+    if total_pypi > 0:
+        console.print(f"\n[bold yellow]Packages available on PyPI:[/bold yellow] {total_pypi}")
+        console.print("[dim]Install them with the commands shown above.[/dim]")
+    
+    if total_missing == 0 and total_pypi == 0:
         print_success("No missing imports found!")
-    else:
-        console.print(f"\n[bold]Total missing imports:[/bold] {total_missing}")
+    elif total_missing > 0:
+        console.print(f"\n[bold]Total missing imports (to generate):[/bold] {total_missing}")
 
 
 @main.command()
@@ -210,6 +242,12 @@ def _display_analysis_results(results: list[AnalysisResult], show_usage: bool) -
     default=False,
     help="Show detailed progress information"
 )
+@click.option(
+    "--ignore-pypi",
+    is_flag=True,
+    default=False,
+    help="Ignore PyPI and generate packages even if they exist there"
+)
 def generate(
     path: str,
     output: str,
@@ -221,6 +259,7 @@ def generate(
     dry_run: bool,
     recursive: bool,
     verbose: bool,
+    ignore_pypi: bool,
 ):
     """
     Generate missing packages from Python code.
@@ -232,7 +271,7 @@ def generate(
     
     # Step 1: Analyze
     console.print("[bold]Step 1:[/bold] Analyzing code...")
-    analyzer = CodeAnalyzer()
+    analyzer = CodeAnalyzer(check_pypi=not ignore_pypi)
     
     if path_obj.is_file():
         results = [analyzer.analyze_file(path_obj)]
@@ -241,13 +280,41 @@ def generate(
         results = analyzer.analyze_directory(path_obj, recursive=recursive)
         source_code = ""  # Could concatenate all files if needed
     
+    # Check for PyPI packages first
+    all_pypi_packages: list[PyPIPackage] = []
+    for result in results:
+        all_pypi_packages.extend(result.pypi_packages)
+    
+    if all_pypi_packages:
+        console.print("\n[bold yellow]Packages available on PyPI:[/bold yellow]")
+        console.print("[dim]These packages exist on PyPI but are not installed.[/dim]\n")
+        
+        pypi_table = Table(show_header=True, header_style="bold yellow")
+        pypi_table.add_column("Package")
+        pypi_table.add_column("Install Command")
+        
+        for pkg in all_pypi_packages:
+            pypi_table.add_row(
+                f"[bold]{pkg.name}[/bold]",
+                f"[cyan]{pkg.install_command}[/cyan]",
+            )
+        
+        console.print(pypi_table)
+        console.print("\n[dim]Tip: Install these packages first:[/dim]")
+        for pkg in all_pypi_packages:
+            console.print(f"  [dim]  {pkg.install_command}[/dim]")
+        console.print()
+    
     # Check for missing imports
     all_missing = []
     for result in results:
         all_missing.extend(result.module_usages)
     
     if not all_missing:
-        print_success("No missing imports found. Nothing to generate.")
+        if all_pypi_packages:
+            console.print("[yellow]Only PyPI packages found. Install them and run again.[/yellow]")
+        else:
+            print_success("No missing imports found. Nothing to generate.")
         return
     
     # Step 2: Extract specifications

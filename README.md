@@ -8,6 +8,7 @@ Vibe-Import analyzes your Python code to find imports that don't exist yet, infe
 
 - **Smart Analysis**: Uses AST parsing to understand how you're using missing imports
 - **Type Inference**: Automatically infers parameter types and return types from usage
+- **PyPI Detection**: Checks if packages exist on PyPI and suggests installation instead of generation
 - **LLM-Powered Generation**: Uses OpenRouter (with free models), OpenAI, or Anthropic
 - **Automatic Retry**: Handles rate limits (429 errors) with exponential backoff
 - **Documentation**: Automatically generates README and API documentation
@@ -95,6 +96,9 @@ vibe-import analyze ./src --recursive
 
 # Show detailed usage information
 vibe-import analyze my_app.py --show-usage
+
+# Ignore PyPI and treat all non-stdlib packages as missing
+vibe-import analyze my_app.py --ignore-pypi
 ```
 
 ### Generate Packages
@@ -128,6 +132,9 @@ vibe-import generate my_app.py --no-docs
 
 # Show detailed progress (verbose mode)
 vibe-import generate my_app.py --verbose
+
+# Ignore PyPI and generate packages even if they exist there
+vibe-import generate my_app.py --ignore-pypi
 ```
 
 ### Speed Up Generation
@@ -279,8 +286,11 @@ export ANTHROPIC_API_KEY="sk-ant-..."
 ## 🔧 How It Works
 
 1. **Parse**: Vibe-Import parses your Python code using AST to find all import statements
-2. **Detect**: It identifies which imports don't exist (aren't installed or in stdlib)
-3. **Analyze**: For missing imports, it tracks how they're used:
+2. **Detect**: It identifies which imports don't exist:
+   - Checks Python standard library
+   - Checks installed packages
+   - **Checks PyPI** - if a package exists on PyPI, it suggests installation instead of generation
+3. **Analyze**: For truly missing imports, it tracks how they're used:
    - Function calls and their arguments
    - Class instantiations and method calls
    - Attribute access patterns
@@ -291,6 +301,38 @@ export ANTHROPIC_API_KEY="sk-ant-..."
    - Return types
 5. **Generate**: Using LLM, it generates complete, working Python code
 6. **Document**: It creates README and API documentation
+
+### PyPI Detection
+
+Vibe-Import automatically checks if missing packages exist on PyPI. If a package is found:
+
+```bash
+$ vibe-import analyze my_app.py
+
+my_app.py
+Packages available on PyPI (not installed):
+┏━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━┓
+┃ Package  ┃ Install Command        ┃
+┡━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━┩
+│ pandas   │ pip install pandas      │
+│ numpy    │ pip install numpy       │
+└──────────┴────────────────────────┘
+
+Tip: Run the install command above to install these packages.
+```
+
+This prevents generating packages that already exist on PyPI!
+
+#### Force Generation
+
+If you want to generate a package even though it exists on PyPI, use `--ignore-pypi`:
+
+```bash
+# Generate pandas even though it exists on PyPI
+vibe-import generate my_app.py --ignore-pypi
+```
+
+This is useful when you want to create a custom implementation or test the generation capabilities.
 
 ## 📝 Example
 

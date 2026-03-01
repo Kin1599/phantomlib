@@ -10,6 +10,9 @@ This module provides AST-based analysis of Python source code to:
 import ast
 import sys
 import importlib.util
+import urllib.request
+import urllib.error
+import json
 from pathlib import Path
 from typing import Any
 
@@ -24,6 +27,7 @@ from vibe_import.models import (
     ReturnUsageInfo,
     ModuleUsage,
     AnalysisResult,
+    PyPIPackage,
 )
 
 
@@ -342,7 +346,15 @@ class CodeAnalyzer:
     Main analyzer class that coordinates import extraction and usage analysis.
     """
     
-    def __init__(self):
+    def __init__(self, check_pypi: bool = True):
+        """
+        Initialize the analyzer.
+        
+        Args:
+            check_pypi: If True, check PyPI for existing packages. If False,
+                       treat all non-stdlib packages as missing.
+        """
+        self.check_pypi = check_pypi
         self.stdlib_modules = self._get_stdlib_modules()
     
     def _get_stdlib_modules(self) -> set[str]:
@@ -357,19 +369,41 @@ class CodeAnalyzer:
         })
         return stdlib
     
-    def _module_exists(self, module_name: str) -> bool:
-        """Check if a module exists and can be imported."""
+    def _check_pypi(self, package_name: str) -> bool:
+        """Check if a package exists on PyPI."""
+        try:
+            url = f"https://pypi.org/pypi/{package_name}/json"
+            with urllib.request.urlopen(url, timeout=2) as response:
+                return response.status == 200
+        except (urllib.error.URLError, urllib.error.HTTPError, ValueError):
+            return False
+    
+    def _module_exists(self, module_name: str) -> tuple[bool, str | None]:
+        """
+        Check if a module exists and can be imported.
+        
+        Returns:
+            Tuple of (exists, install_command) where install_command is the pip install
+            command if the package exists on PyPI but is not installed.
+        """
         # Check stdlib first
         top_level = module_name.split(".")[0]
         if top_level in self.stdlib_modules:
-            return True
+            return True, None
         
         # Try to find the module spec
         try:
             spec = importlib.util.find_spec(module_name)
-            return spec is not None
+            if spec is not None:
+                return True, None
         except (ModuleNotFoundError, ValueError, ImportError):
-            return False
+            pass
+        
+        # Check if package exists on PyPI
+        if self._check_pypi(top_level):
+            return False, f"pip install {top_level}"
+        
+        return False, None
     
     def analyze_file(self, file_path: str | Path) -> AnalysisResult:
         """
@@ -422,8 +456,18 @@ class CodeAnalyzer:
         
         # Find missing imports
         for imp in result.imports:
-            if not self._module_exists(imp.module_name):
-                result.missing_imports.append(imp)
+            exists, install_cmd = self._module_exists(imp.module_name)
+            if not exists:
+                if install_cmd and self.check_pypi:
+                    # Package exists on PyPI but not installed
+                    result.pypi_packages.append(PyPIPackage(
+                        name=imp.top_level_module,
+                        install_command=install_cmd,
+                        import_info=imp,
+                    ))
+                else:
+                    # Package doesn't exist anywhere - needs generation
+                    result.missing_imports.append(imp)
         
         # Build a map of local names to their imports (for missing imports only)
         import_names: dict[str, ImportInfo] = {}
